@@ -1,0 +1,6 @@
+{
+  "name": "Boss Recruit",
+  "description": "A high-fidelity recruitment platform mockup with fully interactive screens, featuring a generated Flutter frontend, Java Spring Boot backend, and MySQL database structure.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

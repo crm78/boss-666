@@ -1,0 +1,32 @@
+name: boss_recruit_app
+description: "A production-grade, highly-polished Flutter application for recruiting and job hunting (inspired by Stitch Design)."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.1.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+  
+  # State management requested in prompt
+  provider: ^6.1.1
+  
+  # Fast, highly structured routing & guards requested in prompt
+  go_router: ^12.1.3
+  
+  # Advanced network triggers & API requests interceptors
+  dio: ^5.4.0
+  
+  # Secure local storage to save JWT authoritatives
+  flutter_secure_storage: ^9.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+
+flutter:
+  uses-material-design: true
