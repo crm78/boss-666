@@ -15,14 +15,21 @@ on:
 jobs:
   build:
     runs-on: macos-14
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    timeout-minutes: 30
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            npm-
 
       - name: Install dependencies
         run: npm install
@@ -30,44 +37,81 @@ jobs:
       - name: Build web assets
         run: npx vite build
 
-      - name: Add iOS platform
+      - name: Generate Capacitor iOS project
         run: |
           rm -rf ios
           npx cap add ios
 
-      - name: Sync Capacitor
+      - name: Sync web assets to native project
         run: npx cap sync ios
 
-      - name: Build app
+      - name: Resolve Swift Package dependencies
         run: |
           cd ios/App
+          xcodebuild -resolvePackageDependencies \
+            -project App.xcodeproj \
+            -scheme App \
+            -quiet 2>&1
+
+      - name: Build unsigned .app bundle
+        id: build
+        continue-on-error: true
+        run: |
+          cd ios/App
+          set -o pipefail
           xcodebuild -project App.xcodeproj \
             -scheme App \
             -configuration ${{ github.event.inputs.configuration }} \
             -derivedDataPath ${{ runner.temp }}/DerivedData \
             build \
-            CODE_SIGNING_ALLOWED=NO 2>&1
+            CODE_SIGNING_ALLOWED=NO \
+            -quiet 2>&1 | tee ${{ runner.temp }}/xcodebuild.log
 
-      - name: Package IPA
+      - name: Diagnose build failure
+        if: steps.build.outcome == 'failure'
         run: |
-          APP_PATH=$(find ${{ runner.temp }}/DerivedData -name "App.app" -type d -path "*/${{ github.event.inputs.configuration }}-iphoneos/*" | head -1)
-          echo "Found app at: $APP_PATH"
-          if [ -z "$APP_PATH" ]; then
-            echo "App.app not found in build products"
-            find ${{ runner.temp }}/DerivedData -name "*.app" -maxdepth 6
+          echo "=== BUILD FAILED ==="
+          echo ""
+          echo "--- Extracted errors ---"
+          grep -nE "error:|: error:|Error:|FATAL|fatal error|BUILD FAILED|command failed|No such module" \
+            ${{ runner.temp }}/xcodebuild.log | head -40
+          echo ""
+          echo "--- Swift compilation errors ---"
+          grep -A2 "SwiftCompile.*error" ${{ runner.temp }}/xcodebuild.log | head -30
+          echo ""
+          echo "--- Last 80 lines of log ---"
+          tail -80 ${{ runner.temp }}/xcodebuild.log
+          exit 1
+
+      - name: Verify .app bundle
+        if: steps.build.outcome == 'success'
+        run: |
+          APP_PATH=$(find ${{ runner.temp }}/DerivedData -name "App.app" -type d \
+            -path "*/${{ github.event.inputs.configuration }}-iphoneos/*" | head -1)
+          if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
+            echo "App.app not found — searching..."
+            find ${{ runner.temp }}/DerivedData -name "*.app" -maxdepth 8
             exit 1
           fi
+          echo "Bundle size: $(du -sh "$APP_PATH" | cut -f1)"
+          echo "Binary: $(file "$APP_PATH/App")"
+          echo "Bundle ID: $(/usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP_PATH/Info.plist" 2>/dev/null)"
+          echo "Version: $(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP_PATH/Info.plist" 2>/dev/null)"
+
+      - name: Package IPA
+        if: steps.build.outcome == 'success'
+        run: |
+          APP_PATH=$(find ${{ runner.temp }}/DerivedData -name "App.app" -type d \
+            -path "*/${{ github.event.inputs.configuration }}-iphoneos/*" | head -1)
           mkdir -p ${{ runner.temp }}/ipa/Payload
           ditto "$APP_PATH" "${{ runner.temp }}/ipa/Payload/App.app"
           cd ${{ runner.temp }}/ipa
+          rm -f App.ipa
           zip -r -X App.ipa Payload/ -q
-          echo "IPA size:"
-          ls -lh App.ipa
-          echo "IPA contents:"
-          unzip -l App.ipa | head -20
+          echo "IPA size: $(ls -lh App.ipa | awk '{print $5}')"
 
-      - name: Upload IPA
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
+        if: steps.build.outcome == 'success'
         with:
           name: App-${{ github.event.inputs.configuration }}.ipa
           path: ${{ runner.temp }}/ipa/App.ipa
