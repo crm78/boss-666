@@ -30,60 +30,28 @@ jobs:
       - name: Build web assets
         run: npx vite build
 
-      - name: Install CocoaPods
-        run: gem install cocoapods
-
       - name: Add iOS platform
         run: npx cap add ios
 
       - name: Sync Capacitor
         run: npx cap sync ios
 
-      - name: Install CocoaPods dependencies
-        run: cd ios && pod install && cd ..
-
-      - name: Import certificate and profile
-        env:
-          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
-          BUILD_CERTIFICATE_PASSWORD: ${{ secrets.BUILD_CERTIFICATE_PASSWORD }}
-          PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
-          KEYCHAIN_PATH: ${{ runner.temp }}/app.keychain
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+      - name: Build unsigned IPA
         run: |
-          # 创建临时钥匙串
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-
-          # 导入证书
-          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode > certificate.p12
-          security import certificate.p12 -k "$KEYCHAIN_PATH" -P "$BUILD_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-
-          # 导入 Provisioning Profile
-          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          echo -n "$PROVISIONING_PROFILE_BASE64" | base64 --decode > ~/Library/MobileDevice/Provisioning\ Profiles/profile.mobileprovision
-
-      - name: List profiles (debug)
-        run: ls ~/Library/MobileDevice/Provisioning\ Profiles/
-
-      - name: Build iOS archive
-        run: |
-          xcodebuild -workspace ios/App/App.xcworkspace \
+          cd ios
+          xcodebuild -workspace App/App.xcworkspace \
             -scheme App \
             -configuration ${{ github.event.inputs.configuration }} \
             -archivePath ${{ runner.temp }}/App.xcarchive \
             archive \
-            CODE_SIGN_STYLE=Manual \
-            PROVISIONING_PROFILE_SPECIFIER="$(ls ~/Library/MobileDevice/Provisioning\ Profiles/ | head -1 | sed 's/\.mobileprovision//')"
+            CODE_SIGNING_ALLOWED=NO
 
-      - name: Export IPA
-        run: |
-          xcodebuild -exportArchive \
-            -archivePath ${{ runner.temp }}/App.xcarchive \
-            -exportPath ${{ runner.temp }}/ipa \
-            -exportOptionsPlist ios/App/exportOptions.plist
+          mkdir -p ${{ runner.temp }}/ipa/Payload
+          cp -r ${{ runner.temp }}/App.xcarchive/Products/Applications/App.app ${{ runner.temp }}/ipa/Payload/
+          cd ${{ runner.temp }}/ipa
+          zip -r App.ipa Payload -q
 
-      - name: Upload IPA artifact
+      - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: App-${{ github.event.inputs.configuration }}.ipa
