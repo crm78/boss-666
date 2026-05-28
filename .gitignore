@@ -1,8 +1,7 @@
-node_modules/
-build/
-dist/
-coverage/
+node_modules
+dist
+*.local
+ios/App/Pods
+ios/App/App.xcworkspace/xcuserdata
 .DS_Store
-*.log
-.env*
-!.env.example
+*.ipa
