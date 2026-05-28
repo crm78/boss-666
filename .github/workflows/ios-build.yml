@@ -30,13 +30,28 @@ jobs:
       - name: Build web assets
         run: npx vite build
 
-      - name: Add iOS platform
-        run: |
-          rm -rf ios
-          npx cap add ios
-          npx cap sync ios
+      - name: Remove stale ios directory
+        run: rm -rf ios
 
-      - name: Build app
+      - name: Add iOS platform
+        run: npx cap add ios
+
+      - name: Debug - list ios/App contents
+        run: find ios -type f -maxdepth 4
+
+      - name: Sync Capacitor
+        run: npx cap sync ios
+
+      - name: Debug - check for xcworkspace
+        run: |
+          echo "=== Looking for .xcworkspace ==="
+          find ios -name "*.xcworkspace" 2>/dev/null
+          echo "=== Looking for .xcodeproj ==="
+          find ios -name "*.xcodeproj" 2>/dev/null
+          echo "=== ios/App full tree ==="
+          ls -la ios/App/
+
+      - name: Build app (unsigned)
         run: |
           cd ios/App
           xcodebuild -workspace App.xcworkspace \
