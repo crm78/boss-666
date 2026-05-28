@@ -31,23 +31,25 @@ jobs:
         run: npx vite build
 
       - name: Add iOS platform
-        run: npx cap add ios
-
-      - name: Sync Capacitor
-        run: npx cap sync ios
-
-      - name: Build unsigned IPA
         run: |
-          cd ios
-          xcodebuild -workspace App/App.xcworkspace \
+          rm -rf ios
+          npx cap add ios
+          npx cap sync ios
+
+      - name: Build app
+        run: |
+          cd ios/App
+          xcodebuild -workspace App.xcworkspace \
             -scheme App \
             -configuration ${{ github.event.inputs.configuration }} \
-            -archivePath ${{ runner.temp }}/App.xcarchive \
-            archive \
+            -derivedDataPath ${{ runner.temp }}/DerivedData \
+            build \
             CODE_SIGNING_ALLOWED=NO
 
+      - name: Package IPA
+        run: |
           mkdir -p ${{ runner.temp }}/ipa/Payload
-          cp -r ${{ runner.temp }}/App.xcarchive/Products/Applications/App.app ${{ runner.temp }}/ipa/Payload/
+          cp -r ${{ runner.temp }}/DerivedData/Build/Products/${{ github.event.inputs.configuration }}-iphoneos/App.app ${{ runner.temp }}/ipa/Payload/
           cd ${{ runner.temp }}/ipa
           zip -r App.ipa Payload -q
 

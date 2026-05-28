@@ -1,7 +1,6 @@
 node_modules
 dist
 *.local
-ios/App/Pods
-ios/App/App.xcworkspace/xcuserdata
+ios
 .DS_Store
 *.ipa
