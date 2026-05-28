@@ -34,40 +34,41 @@ jobs:
         run: |
           rm -rf ios
           npx cap add ios
+          ls ios/App/
 
       - name: Sync Capacitor
         run: npx cap sync ios
 
-      - name: Build app (unsigned)
+      - name: Build archive
         run: |
           cd ios/App
           xcodebuild -project App.xcodeproj \
             -scheme App \
             -configuration ${{ github.event.inputs.configuration }} \
-            -derivedDataPath ${{ runner.temp }}/DerivedData \
-            build \
-            CODE_SIGNING_ALLOWED=NO 2>&1 | tee xcodebuild.log
-          EXIT_CODE=$?
-          echo ""
-          echo "=== LAST 50 LINES OF XCODEBUILD OUTPUT ==="
-          tail -50 xcodebuild.log
-          echo ""
-          echo "=== SEARCHING FOR ERRORS ==="
-          grep -E "error:|FAILED|fatal error" xcodebuild.log || echo "No standard error patterns found"
-          grep -E ":[0-9]+:[0-9]+: error:" xcodebuild.log || echo "No line-specific errors found"
-          exit $EXIT_CODE
+            -archivePath ${{ runner.temp }}/App.xcarchive \
+            -destination 'generic/platform=iOS' \
+            archive \
+            CODE_SIGNING_ALLOWED=NO 2>&1 || true
+          echo "=== EXIT CODE: $? ==="
+          echo "=== Archive contents ==="
+          ls -la ${{ runner.temp }}/App.xcarchive/Products/Applications/ 2>/dev/null || echo "No archive output"
 
-      - name: Package IPA (if build succeeded)
-        if: success()
+      - name: Package IPA
         run: |
-          mkdir -p ${{ runner.temp }}/ipa/Payload
-          cp -r ${{ runner.temp }}/DerivedData/Build/Products/${{ github.event.inputs.configuration }}-iphoneos/App.app ${{ runner.temp }}/ipa/Payload/
-          cd ${{ runner.temp }}/ipa
-          zip -r App.ipa Payload -q
-          ls -lh App.ipa
+          if [ -d "${{ runner.temp }}/App.xcarchive/Products/Applications/App.app" ]; then
+            mkdir -p ${{ runner.temp }}/ipa/Payload
+            cp -r ${{ runner.temp }}/App.xcarchive/Products/Applications/App.app ${{ runner.temp }}/ipa/Payload/
+            cd ${{ runner.temp }}/ipa
+            zip -r App.ipa Payload -q
+            echo "IPA created successfully"
+            ls -lh App.ipa
+          else
+            echo "App.app not found - build failed"
+            ls -la ${{ runner.temp }}/App.xcarchive/Products/Applications/ 2>/dev/null || echo "No applications found"
+            exit 1
+          fi
 
       - name: Upload IPA
-        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: App-${{ github.event.inputs.configuration }}.ipa
