@@ -30,26 +30,43 @@ jobs:
       - name: Build web assets
         run: npx vite build
 
-      - name: Remove stale ios directory
-        run: rm -rf ios
+      - name: Initialize iOS platform
+        run: |
+          rm -rf ios
+          echo "=== Running cap add ios ==="
+          npx cap add ios 2>&1
+          CAP_EXIT=$?
+          echo "cap add ios exit code: $CAP_EXIT"
+          if [ $CAP_EXIT -ne 0 ]; then
+            echo "cap add ios failed, trying direct binary..."
+            ./node_modules/.bin/cap add ios 2>&1
+          fi
+          echo "=== Verifying ios/App contents ==="
+          ls -la ios/App/
+          echo "=== Looking for .xcworkspace ==="
+          find ios -name "*.xcworkspace" -maxdepth 3
 
-      - name: Add iOS platform
-        run: npx cap add ios
-
-      - name: Debug - list ios/App contents
-        run: find ios -type f -maxdepth 4
+      - name: Ensure workspace exists
+        run: |
+          if [ ! -f ios/App/App.xcworkspace ]; then
+            echo "=== App.xcworkspace missing! Attempting repair... ==="
+            ls -la ios/App/
+            # Try to regenerate just the workspace
+            npx cap sync ios 2>&1
+            find ios -name "*.xcworkspace" -maxdepth 3
+          fi
+          if [ ! -f ios/App/App.xcworkspace ]; then
+            echo "FATAL: App.xcworkspace could not be created"
+            exit 1
+          fi
 
       - name: Sync Capacitor
         run: npx cap sync ios
 
-      - name: Debug - check for xcworkspace
+      - name: Install CocoaPods
         run: |
-          echo "=== Looking for .xcworkspace ==="
-          find ios -name "*.xcworkspace" 2>/dev/null
-          echo "=== Looking for .xcodeproj ==="
-          find ios -name "*.xcodeproj" 2>/dev/null
-          echo "=== ios/App full tree ==="
-          ls -la ios/App/
+          gem install cocoapods --no-document 2>&1 | tail -3
+          cd ios/App && pod install --repo-update 2>&1 | tail -5
 
       - name: Build app (unsigned)
         run: |
@@ -59,7 +76,7 @@ jobs:
             -configuration ${{ github.event.inputs.configuration }} \
             -derivedDataPath ${{ runner.temp }}/DerivedData \
             build \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO 2>&1
 
       - name: Package IPA
         run: |
@@ -67,6 +84,8 @@ jobs:
           cp -r ${{ runner.temp }}/DerivedData/Build/Products/${{ github.event.inputs.configuration }}-iphoneos/App.app ${{ runner.temp }}/ipa/Payload/
           cd ${{ runner.temp }}/ipa
           zip -r App.ipa Payload -q
+          echo "=== IPA size ==="
+          ls -lh App.ipa
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
