@@ -34,13 +34,11 @@ jobs:
         run: |
           rm -rf ios
           npx cap add ios
-          echo "=== Verification ==="
-          ls ios/App/
 
       - name: Sync Capacitor
         run: npx cap sync ios
 
-      - name: Build app (unsigned, SPM)
+      - name: Build app (unsigned)
         run: |
           cd ios/App
           xcodebuild -project App.xcodeproj \
@@ -48,18 +46,28 @@ jobs:
             -configuration ${{ github.event.inputs.configuration }} \
             -derivedDataPath ${{ runner.temp }}/DerivedData \
             build \
-            CODE_SIGNING_ALLOWED=NO 2>&1
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee xcodebuild.log
+          EXIT_CODE=$?
+          echo ""
+          echo "=== LAST 50 LINES OF XCODEBUILD OUTPUT ==="
+          tail -50 xcodebuild.log
+          echo ""
+          echo "=== SEARCHING FOR ERRORS ==="
+          grep -E "error:|FAILED|fatal error" xcodebuild.log || echo "No standard error patterns found"
+          grep -E ":[0-9]+:[0-9]+: error:" xcodebuild.log || echo "No line-specific errors found"
+          exit $EXIT_CODE
 
-      - name: Package IPA
+      - name: Package IPA (if build succeeded)
+        if: success()
         run: |
           mkdir -p ${{ runner.temp }}/ipa/Payload
           cp -r ${{ runner.temp }}/DerivedData/Build/Products/${{ github.event.inputs.configuration }}-iphoneos/App.app ${{ runner.temp }}/ipa/Payload/
           cd ${{ runner.temp }}/ipa
           zip -r App.ipa Payload -q
-          echo "IPA size:"
           ls -lh App.ipa
 
       - name: Upload IPA
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: App-${{ github.event.inputs.configuration }}.ipa
