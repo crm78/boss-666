@@ -34,39 +34,37 @@ jobs:
         run: |
           rm -rf ios
           npx cap add ios
-          ls ios/App/
 
       - name: Sync Capacitor
         run: npx cap sync ios
 
-      - name: Build archive
+      - name: Build app
         run: |
           cd ios/App
           xcodebuild -project App.xcodeproj \
             -scheme App \
             -configuration ${{ github.event.inputs.configuration }} \
-            -archivePath ${{ runner.temp }}/App.xcarchive \
-            -destination 'generic/platform=iOS' \
-            archive \
-            CODE_SIGNING_ALLOWED=NO 2>&1 || true
-          echo "=== EXIT CODE: $? ==="
-          echo "=== Archive contents ==="
-          ls -la ${{ runner.temp }}/App.xcarchive/Products/Applications/ 2>/dev/null || echo "No archive output"
+            -derivedDataPath ${{ runner.temp }}/DerivedData \
+            build \
+            CODE_SIGNING_ALLOWED=NO 2>&1
 
       - name: Package IPA
         run: |
-          if [ -d "${{ runner.temp }}/App.xcarchive/Products/Applications/App.app" ]; then
-            mkdir -p ${{ runner.temp }}/ipa/Payload
-            cp -r ${{ runner.temp }}/App.xcarchive/Products/Applications/App.app ${{ runner.temp }}/ipa/Payload/
-            cd ${{ runner.temp }}/ipa
-            zip -r App.ipa Payload -q
-            echo "IPA created successfully"
-            ls -lh App.ipa
-          else
-            echo "App.app not found - build failed"
-            ls -la ${{ runner.temp }}/App.xcarchive/Products/Applications/ 2>/dev/null || echo "No applications found"
+          APP_PATH=$(find ${{ runner.temp }}/DerivedData -name "App.app" -type d -path "*/${{ github.event.inputs.configuration }}-iphoneos/*" | head -1)
+          echo "Found app at: $APP_PATH"
+          if [ -z "$APP_PATH" ]; then
+            echo "App.app not found in build products"
+            find ${{ runner.temp }}/DerivedData -name "*.app" -maxdepth 6
             exit 1
           fi
+          mkdir -p ${{ runner.temp }}/ipa/Payload
+          ditto "$APP_PATH" "${{ runner.temp }}/ipa/Payload/App.app"
+          cd ${{ runner.temp }}/ipa
+          zip -r -X App.ipa Payload/ -q
+          echo "IPA size:"
+          ls -lh App.ipa
+          echo "IPA contents:"
+          unzip -l App.ipa | head -20
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
