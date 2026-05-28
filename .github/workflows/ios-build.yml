@@ -30,48 +30,20 @@ jobs:
       - name: Build web assets
         run: npx vite build
 
-      - name: Initialize iOS platform
+      - name: Add iOS platform
         run: |
           rm -rf ios
-          echo "=== Running cap add ios ==="
-          npx cap add ios 2>&1
-          CAP_EXIT=$?
-          echo "cap add ios exit code: $CAP_EXIT"
-          if [ $CAP_EXIT -ne 0 ]; then
-            echo "cap add ios failed, trying direct binary..."
-            ./node_modules/.bin/cap add ios 2>&1
-          fi
-          echo "=== Verifying ios/App contents ==="
-          ls -la ios/App/
-          echo "=== Looking for .xcworkspace ==="
-          find ios -name "*.xcworkspace" -maxdepth 3
-
-      - name: Ensure workspace exists
-        run: |
-          if [ ! -f ios/App/App.xcworkspace ]; then
-            echo "=== App.xcworkspace missing! Attempting repair... ==="
-            ls -la ios/App/
-            # Try to regenerate just the workspace
-            npx cap sync ios 2>&1
-            find ios -name "*.xcworkspace" -maxdepth 3
-          fi
-          if [ ! -f ios/App/App.xcworkspace ]; then
-            echo "FATAL: App.xcworkspace could not be created"
-            exit 1
-          fi
+          npx cap add ios
+          echo "=== Verification ==="
+          ls ios/App/
 
       - name: Sync Capacitor
         run: npx cap sync ios
 
-      - name: Install CocoaPods
-        run: |
-          gem install cocoapods --no-document 2>&1 | tail -3
-          cd ios/App && pod install --repo-update 2>&1 | tail -5
-
-      - name: Build app (unsigned)
+      - name: Build app (unsigned, SPM)
         run: |
           cd ios/App
-          xcodebuild -workspace App.xcworkspace \
+          xcodebuild -project App.xcodeproj \
             -scheme App \
             -configuration ${{ github.event.inputs.configuration }} \
             -derivedDataPath ${{ runner.temp }}/DerivedData \
@@ -84,7 +56,7 @@ jobs:
           cp -r ${{ runner.temp }}/DerivedData/Build/Products/${{ github.event.inputs.configuration }}-iphoneos/App.app ${{ runner.temp }}/ipa/Payload/
           cd ${{ runner.temp }}/ipa
           zip -r App.ipa Payload -q
-          echo "=== IPA size ==="
+          echo "IPA size:"
           ls -lh App.ipa
 
       - name: Upload IPA
